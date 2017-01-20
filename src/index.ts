@@ -8,7 +8,8 @@ interface Job {
 
 class SerializedJob {
   static Parse(sj : SerializedJob) : Job {
-    let fn = Function(sj.fn);
+    let fnBody = "var fn = " + sj.fn + "; fn(obj);"
+    let fn = Function("obj", fnBody);
     let obj = JSON.parse(sj.value)
     return {
       expires_at: sj.expires_at,
@@ -32,35 +33,42 @@ class Database extends Dexie {
     constructor () {
         super("dexie-queue");
         this.version(1).stores({
-            contacts: '++id'
+            jobs: '++id'
         });
     }
 }
 
-class Queue {
-  private db : Database;
+class JobQueue { 
+  public db : Database;
 
-  public Enqueue(job: Job, fn: JobFunction) : Promise<number> {
+  public Enqueue(job: Job) : Promise<number> {
     let s : SerializedJob = {
       expires_at: job.expires_at,
-      fn : fn.toString(),
+      fn : job.fn.toString(),
       value: JSON.stringify(job)
     };
     return this.db.jobs.add(s)
   }
 
-  private poll(){
-    this.db.jobs.orderBy("id desc").each(job => {
+  private static poll(queue: JobQueue){
+    let db = queue.db;
+    let ids : Array<number>= [];
+    queue.db.jobs.each(job => {
       let res = SerializedJob.Parse(job);
       try {
-        res.fn(res.value);
-        this.db.jobs.delete(job.id);
+        let retVal = res.fn(res.value);
+        ids.push(job.id);
       }
       catch (e) {
-        this.db.jobs.update(job.id, { error: e })
+        console.log(e);
+        db.jobs.update(job.id, { error: e })
       }
     }).then(() =>
-      setTimeout(this.poll, 1000)
+      // delete all the jobs we finished
+      {
+      db.jobs.bulkDelete(ids).catch(err => console.log(err))
+      setTimeout(() => JobQueue.poll(queue), 1000);
+      }
     );
 
   }
@@ -68,7 +76,7 @@ class Queue {
   public Start() {
     this.db = new Database();
     return this.db.open().then(() =>
-      this.poll()
+      JobQueue.poll(this)
     );
   }
 
@@ -78,5 +86,5 @@ class Queue {
 
 }
 
-let queue = new Queue();
-export default Queue;
+let jobQueue = new JobQueue();
+export default jobQueue;

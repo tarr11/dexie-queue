@@ -1,12 +1,15 @@
 var path = require('path');
 
 const config = {
-  entry: './src/index.ts',
+  entry: {
+  index: './src/index.ts',
+  test: './src/test.ts'}
+  ,
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'index.js'
+    filename: '[name].js'
   },
-  devtool: "source-map",
+  devtool: "inline-source-map",
   resolve: {
     extensions: ['.ts', '.js']
   },
